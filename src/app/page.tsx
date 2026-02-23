@@ -1,65 +1,197 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Database, Key, Server } from "lucide-react";
+
+export default function ConnectionPage() {
+  const router = useRouter();
+  const [url, setUrl] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [autoConnecting, setAutoConnecting] = useState(true);
+
+  // Auto-connect from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem("weaviateConfig");
+    if (!stored) {
+      setAutoConnecting(false);
+      return;
+    }
+
+    try {
+      const config = JSON.parse(stored);
+      // Pre-fill form fields
+      setUrl(config.url || "");
+      setApiKey(config.apiKey || "");
+
+      // Attempt auto-connect
+      fetch("/api/weaviate/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: config.url, apiKey: config.apiKey })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            router.push("/dashboard");
+          } else {
+            // Connection failed, stay on page — user can manually reconnect
+            setAutoConnecting(false);
+          }
+        })
+        .catch(() => {
+          setAutoConnecting(false);
+        });
+    } catch {
+      setAutoConnecting(false);
+    }
+  }, [router]);
+
+  const handleConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setIsLoading(true);
+
+    try {
+      // Basic URL validation
+      const urlObj = new URL(url);
+      if (urlObj.protocol !== "http:" && urlObj.protocol !== "https:") {
+        throw new Error("URL must start with http:// or https://");
+      }
+
+      // Extract url and apiKey from state
+      const res = await fetch("/api/weaviate/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, apiKey })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to connect to Weaviate instance");
+      }
+
+      // Save credentials since connection was successful
+      localStorage.setItem("weaviateConfig", JSON.stringify({ url, apiKey }));
+
+      // Redirect to dashboard
+      router.push("/dashboard");
+    } catch (err: any) {
+      setError(err.message || "Invalid connection configuration. Please check your URL and API Key.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Show loading screen during auto-connect
+  if (autoConnecting) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4 animate-in fade-in duration-500">
+          <div className="bg-primary/10 w-16 h-16 rounded-2xl flex items-center justify-center text-primary shadow-sm">
+            <Database className="w-8 h-8" />
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+            <span className="text-muted-foreground font-medium">Reconnecting...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 relative overflow-hidden">
+      {/* Background decoration elements */}
+      <div className="absolute top-[-10%] left-[-10%] w-[40vw] h-[40vw] rounded-full bg-primary/5 blur-[100px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[40vw] h-[40vw] rounded-full bg-secondary/5 blur-[100px] pointer-events-none" />
+
+      <Card className="w-full max-w-[420px] shadow-xl border-border/50 backdrop-blur-sm bg-card/90">
+        <CardHeader className="space-y-2 text-center pb-8 pt-8">
+          <div className="mx-auto bg-primary/10 w-16 h-16 rounded-2xl flex items-center justify-center mb-4 text-primary shadow-sm">
+            <Database className="w-8 h-8" />
+          </div>
+          <CardTitle className="text-3xl font-bold tracking-tight text-foreground">
+            Weaviate Manager
+          </CardTitle>
+          <CardDescription className="text-base text-muted-foreground">
+            Connect to your remote database instance
+          </CardDescription>
+        </CardHeader>
+
+        <form onSubmit={handleConnect}>
+          <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="url" className="text-sm font-semibold">
+                Instance URL
+              </Label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-muted-foreground">
+                  <Server className="w-4 h-4" />
+                </div>
+                <Input
+                  id="url"
+                  placeholder="https://your-weaviate-instance.app"
+                  type="url"
+                  required
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  className="pl-10 h-12 border-muted placeholder:text-muted-foreground/60 transition-all focus:border-primary focus:ring-primary/20"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="apiKey" className="text-sm font-semibold flex justify-between">
+                <span>API Key</span>
+                <span className="text-xs font-normal text-muted-foreground">(Optional for auth)</span>
+              </Label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-muted-foreground">
+                  <Key className="w-4 h-4" />
+                </div>
+                <Input
+                  id="apiKey"
+                  placeholder="**********************"
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="pl-10 h-12 border-muted placeholder:text-muted-foreground/60 transition-all focus:border-primary focus:ring-primary/20"
+                />
+              </div>
+            </div>
+
+            {error && (
+              <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-lg border border-destructive/20 text-center animate-in fade-in slide-in-from-top-1">
+                {error}
+              </div>
+            )}
+          </CardContent>
+          <CardFooter className="pb-8 mt-[20px]">
+            <Button
+              type="submit"
+              className="w-full h-12 text-base font-semibold shadow-md active:scale-[0.98] transition-all"
+              disabled={isLoading}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+              {isLoading ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                  Connecting...
+                </span>
+              ) : (
+                "Connect to Instance"
+              )}
+            </Button>
+          </CardFooter>
+        </form>
+      </Card>
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { Database, Key, Server } from "lucide-react";
 export default function ConnectionPage() {
   const router = useRouter();
   const [url, setUrl] = useState("");
+  const [port, setPort] = useState("8080");
   const [apiKey, setApiKey] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -29,6 +30,10 @@ export default function ConnectionPage() {
       // Pre-fill form fields
       setUrl(config.url || "");
       setApiKey(config.apiKey || "");
+      try {
+        const u = new URL(config.url || "");
+        if (u.port) setPort(u.port);
+      } catch {}
 
       // Attempt auto-connect
       fetch("/api/weaviate/connect", {
@@ -65,11 +70,25 @@ export default function ConnectionPage() {
         throw new Error("URL must start with http:// or https://");
       }
 
+      // Validate and merge port if provided
+      let finalUrl = url;
+      const trimmedPort = port.trim();
+      if (!urlObj.port && trimmedPort) {
+        const n = Number(trimmedPort);
+        if (!Number.isInteger(n) || n < 1 || n > 65535) {
+          throw new Error("Port must be a number between 1 and 65535");
+        }
+        urlObj.port = String(n);
+        finalUrl = urlObj.toString();
+      } else if (urlObj.port) {
+        finalUrl = urlObj.toString();
+      }
+
       // Extract url and apiKey from state
       const res = await fetch("/api/weaviate/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, apiKey })
+        body: JSON.stringify({ url: finalUrl, apiKey, port: urlObj.port || trimmedPort || undefined })
       });
 
       const data = await res.json();
@@ -79,7 +98,7 @@ export default function ConnectionPage() {
       }
 
       // Save credentials since connection was successful
-      localStorage.setItem("weaviateConfig", JSON.stringify({ url, apiKey }));
+      localStorage.setItem("weaviateConfig", JSON.stringify({ url: finalUrl, apiKey }));
 
       // Redirect to dashboard
       router.push("/dashboard");
@@ -146,6 +165,26 @@ export default function ConnectionPage() {
                   className="pl-10 h-12 border-muted placeholder:text-muted-foreground/60 transition-all focus:border-primary focus:ring-primary/20"
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="port" className="text-sm font-semibold">
+                Port
+              </Label>
+              <Input
+                id="port"
+                placeholder="8080"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={65535}
+                value={port}
+                onChange={(e) => setPort(e.target.value)}
+                className="h-12 border-muted placeholder:text-muted-foreground/60 transition-all focus:border-primary focus:ring-primary/20"
+              />
+              <p className="text-xs text-muted-foreground">
+                默认 8080；若 URL 已包含端口将优先生效
+              </p>
             </div>
 
             <div className="space-y-2">

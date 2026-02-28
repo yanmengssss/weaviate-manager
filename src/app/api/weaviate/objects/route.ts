@@ -5,13 +5,17 @@ import { getWeaviateClient } from "@/lib/weaviate";
 function getCredentials(req: Request) {
     const url = req.headers.get("x-weaviate-url");
     const apiKey = req.headers.get("x-weaviate-api-key") || undefined;
-    if (!url) throw new Error("Missing x-weaviate-url header");
+    if (!url) return { error: "Missing x-weaviate-url header" };
     return { url, apiKey };
 }
 
 export async function GET(req: Request) {
     try {
-        const { url, apiKey } = getCredentials(req);
+        const credentials = getCredentials(req);
+        if ("error" in credentials) {
+            return NextResponse.json({ error: credentials.error }, { status: 400 });
+        }
+        const { url, apiKey } = credentials;
         const { searchParams } = new URL(req.url);
         const className = searchParams.get("class");
         const limitStr = searchParams.get("limit") || "20";
@@ -60,7 +64,11 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
     try {
-        const { url, apiKey } = getCredentials(req);
+        const credentials = getCredentials(req);
+        if ("error" in credentials) {
+            return NextResponse.json({ error: credentials.error }, { status: 400 });
+        }
+        const { url, apiKey } = credentials;
         const body = await req.json();
         const { class: className, properties } = body;
 
@@ -80,7 +88,11 @@ export async function POST(req: Request) {
 
 export async function PUT(req: Request) {
     try {
-        const { url, apiKey } = getCredentials(req);
+        const credentials = getCredentials(req);
+        if ("error" in credentials) {
+            return NextResponse.json({ error: credentials.error }, { status: 400 });
+        }
+        const { url, apiKey } = credentials;
         const body = await req.json();
         const { class: className, id, properties } = body;
 
@@ -104,7 +116,11 @@ export async function PUT(req: Request) {
 
 export async function DELETE(req: Request) {
     try {
-        const { url, apiKey } = getCredentials(req);
+        const credentials = getCredentials(req);
+        if ("error" in credentials) {
+            return NextResponse.json({ error: credentials.error }, { status: 400 });
+        }
+        const { url, apiKey } = credentials;
         const { searchParams } = new URL(req.url);
         const className = searchParams.get("class");
         const id = searchParams.get("id");

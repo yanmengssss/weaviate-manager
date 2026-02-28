@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +16,34 @@ type StoredConfig = {
     username?: string;
     apiKey?: string;
     useTls?: boolean;
+    redisUrl?: string;
+    mongoUri?: string;
+    authDb?: string;
+    database?: string;
+    mongoDatabase?: string;
+    mongoReplicaSet?: string;
+    mongoReadPreference?: string;
+    connectionMode?: "standard" | "srv";
+    redisDbIndex?: string;
+    connectionTimeout?: string;
+    tlsCa?: string;
+    tlsCert?: string;
+    tlsKey?: string;
+    charset?: string;
+    timezone?: string;
+    sslMode?: string;
+    useOidc?: boolean;
+    oidcClientId?: string;
+    oidcClientSecret?: string;
+    oidcIssuerUrl?: string;
+    customHeaders?: string;
+    grpcPort?: string;
+};
+
+type SessionItem = {
+    id: string;
+    name: string;
+    config: StoredConfig;
 };
 
 const fetchJson = async (url: string, options?: RequestInit) => {
@@ -29,23 +58,29 @@ const fetchJson = async (url: string, options?: RequestInit) => {
 export default function DashboardOverviewPage() {
     const [config, setConfig] = useState<StoredConfig | null>(null);
     const [loadError, setLoadError] = useState("");
+    const [weaviateStatus, setWeaviateStatus] = useState<"idle" | "loading" | "empty">("idle");
+    const router = useRouter();
 
     const headers = useMemo(() => {
         if (!config) return {};
         if (config.type === "redis") {
             return {
+                "x-redis-url": config.redisUrl || "",
                 "x-redis-host": config.host || "",
                 "x-redis-port": config.port || "",
+                "x-redis-username": config.username || "",
                 "x-redis-password": config.apiKey || "",
                 "x-redis-tls": config.useTls ? "true" : "false"
             };
         }
         if (config.type === "mongodb") {
             return {
+                "x-mongo-uri": config.mongoUri || "",
                 "x-mongo-host": config.host || "",
                 "x-mongo-port": config.port || "",
                 "x-mongo-username": config.username || "",
                 "x-mongo-password": config.apiKey || "",
+                "x-mongo-auth-db": config.authDb || "admin",
                 "x-mongo-tls": config.useTls ? "true" : "false"
             };
         }
@@ -54,7 +89,8 @@ export default function DashboardOverviewPage() {
                 "x-mysql-host": config.host || "",
                 "x-mysql-port": config.port || "",
                 "x-mysql-user": config.username || "",
-                "x-mysql-password": config.apiKey || ""
+                "x-mysql-password": config.apiKey || "",
+                "x-mysql-database": config.database || ""
             };
         }
         return {
@@ -64,23 +100,67 @@ export default function DashboardOverviewPage() {
     }, [config]);
 
     useEffect(() => {
+        const storedSessions = localStorage.getItem("weaviateSessions");
+        const storedActiveId = localStorage.getItem("weaviateActiveSessionId");
         const stored = localStorage.getItem("weaviateConfig");
-        if (!stored) {
+        if (!storedSessions && !stored) {
             setLoadError("未检测到连接信息，请返回重新连接");
             return;
         }
         try {
-            const parsed = JSON.parse(stored) as StoredConfig;
+            if (storedSessions) {
+                const sessions = JSON.parse(storedSessions) as SessionItem[];
+                const active = sessions.find((item) => item.id === storedActiveId) || sessions[0];
+                if (!active) {
+                    setLoadError("未检测到连接信息，请返回重新连接");
+                    return;
+                }
+                setConfig(active.config);
+                return;
+            }
+            const parsed = JSON.parse(stored || "{}") as StoredConfig;
+            if (!parsed.type) {
+                setLoadError("连接信息解析失败，请返回重新连接");
+                return;
+            }
             setConfig(parsed);
         } catch {
             setLoadError("连接信息解析失败，请返回重新连接");
         }
     }, []);
 
+    useEffect(() => {
+        if (!config || config.type !== "weaviate") return;
+        let cancelled = false;
+        const loadClasses = async () => {
+            setWeaviateStatus("loading");
+            try {
+                const data = await fetchJson("/api/weaviate/schema", { headers });
+                const nextClass = data.classes?.[0]?.class;
+                if (cancelled) return;
+                if (nextClass) {
+                    router.replace(`/dashboard/class/${nextClass}`);
+                    return;
+                }
+                setWeaviateStatus("empty");
+            } catch {
+                if (!cancelled) {
+                    setWeaviateStatus("empty");
+                }
+            }
+        };
+        loadClasses();
+        return () => {
+            cancelled = true;
+        };
+    }, [config, headers, router]);
+
     if (loadError) {
         return (
-            <div className="h-full flex items-center justify-center text-muted-foreground">
-                {loadError}
+            <div className="h-full flex items-center justify-center">
+                <div className="rounded-2xl border border-border/60 bg-card/70 px-10 py-8 text-center text-muted-foreground shadow-sm">
+                    {loadError}
+                </div>
             </div>
         );
     }
@@ -88,53 +168,25 @@ export default function DashboardOverviewPage() {
     if (!config) {
         return (
             <div className="h-full flex items-center justify-center text-muted-foreground">
-                加载中...
+                <div className="flex items-center gap-3 rounded-full border border-border/60 bg-card/70 px-4 py-2 shadow-sm">
+                    <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                    加载中...
+                </div>
             </div>
         );
     }
 
     if (config.type === "weaviate") {
         return (
-            <div className="h-full flex flex-col items-center justify-center text-center py-16 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="bg-primary/5 p-6 rounded-full mb-6 ring-8 ring-primary/5">
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="48"
-                        height="48"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="text-primary opacity-80"
-                    >
-                        <ellipse cx="12" cy="5" rx="9" ry="3" />
-                        <path d="M3 5V19A9 3 0 0 0 21 19V5" />
-                        <path d="M3 12A9 3 0 0 0 21 12" />
-                    </svg>
-                </div>
-                <h2 className="text-3xl font-bold tracking-tight text-foreground mb-3">
-                    已连接数据源
-                </h2>
-                <p className="text-muted-foreground max-w-2xl text-lg mb-8">
-                    在左侧选择 Weaviate Class 进行对象管理
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-4xl">
-                    {[
-                        { title: "Weaviate 类管理", desc: "查看 Class、对象数量与结构" },
-                        { title: "对象 CRUD", desc: "新增、编辑、删除对象并支持搜索" },
-                        { title: "分页浏览", desc: "支持分页、批量选择与删除" }
-                    ].map((item) => (
-                        <div
-                            key={item.title}
-                            className="border border-border rounded-lg px-4 py-4 bg-card/40 text-left"
-                        >
-                            <h3 className="font-semibold text-foreground mb-1">{item.title}</h3>
-                            <p className="text-sm text-muted-foreground">{item.desc}</p>
-                        </div>
-                    ))}
-                </div>
+            <div className="h-full flex items-center justify-center text-muted-foreground">
+                {weaviateStatus === "empty" ? (
+                    <div className="rounded-2xl border border-border/60 bg-card/70 px-8 py-6 text-sm">暂无 Class 数据</div>
+                ) : (
+                    <div className="flex items-center gap-3 rounded-full border border-border/60 bg-card/70 px-4 py-2 shadow-sm">
+                        <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                        正在加载 Class...
+                    </div>
+                )}
             </div>
         );
     }
@@ -256,82 +308,98 @@ function RedisPanel({ headers }: { headers: Record<string, string> }) {
 
     return (
         <div className="space-y-6">
-            <div className="flex flex-col lg:flex-row gap-4">
-                <div className="flex-1 space-y-3">
-                    <div className="flex gap-2">
-                        <Input value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="Key pattern" />
-                        <Button onClick={() => loadKeys()} disabled={loading}>扫描</Button>
+            <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-4">
+                <div className="rounded-xl border border-border/60 bg-card/60 overflow-hidden">
+                    <div className="flex items-center gap-3 border-b border-border/60 bg-background/70 px-4 py-3">
+                        <div className="text-sm font-semibold text-foreground">Keyspace</div>
+                        <div className="ml-auto text-xs text-muted-foreground">Cursor: {cursor}</div>
                     </div>
-                    <div className="rounded-md border border-border overflow-hidden">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Key</TableHead>
-                                    <TableHead>Type</TableHead>
-                                    <TableHead>TTL</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
+                    <div className="p-3 space-y-3">
+                        <div className="flex gap-2">
+                            <Input value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="搜索 key 或 pattern" />
+                            <Button onClick={() => loadKeys()} disabled={loading}>扫描</Button>
+                        </div>
+                        <div className="rounded-lg border border-border/60 bg-background/70">
+                            <div className="grid grid-cols-[1fr_72px_64px] gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground border-b border-border/60">
+                                <div>Key</div>
+                                <div>Type</div>
+                                <div>TTL</div>
+                            </div>
+                            <div className="max-h-[520px] overflow-auto">
                                 {keys.length === 0 ? (
-                                    <TableRow>
-                                        <TableCell colSpan={3} className="text-center text-muted-foreground">
-                                            {loading ? "加载中..." : "暂无 Key"}
-                                        </TableCell>
-                                    </TableRow>
+                                    <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                                        {loading ? "加载中..." : "暂无 Key"}
+                                    </div>
                                 ) : (
                                     keys.map((item) => (
-                                        <TableRow key={item.key} className="cursor-pointer" onClick={() => loadKeyDetail(item.key)}>
-                                            <TableCell className="truncate max-w-[260px]">{item.key}</TableCell>
-                                            <TableCell>{item.type}</TableCell>
-                                            <TableCell>{item.ttl}</TableCell>
-                                        </TableRow>
+                                        <button
+                                            key={item.key}
+                                            type="button"
+                                            onClick={() => loadKeyDetail(item.key)}
+                                            className={`grid w-full grid-cols-[1fr_72px_64px] gap-2 px-3 py-2 text-left text-sm border-b border-border/60 last:border-b-0 hover:bg-muted/40 ${selectedKey === item.key ? "bg-muted/40 text-foreground" : "text-foreground/80"}`}
+                                        >
+                                            <div className="truncate">{item.key}</div>
+                                            <div className="uppercase text-xs">{item.type}</div>
+                                            <div className="text-xs">{item.ttl}</div>
+                                        </button>
                                     ))
                                 )}
-                            </TableBody>
-                        </Table>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Button variant="outline" onClick={() => loadKeys(cursor)} disabled={loading || cursor === "0"}>下一页</Button>
-                        <span className="text-xs text-muted-foreground">Cursor: {cursor}</span>
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <Button variant="outline" onClick={() => loadKeys(cursor)} disabled={loading || cursor === "0"}>下一页</Button>
+                            <span className="text-xs text-muted-foreground">共 {keys.length} 条</span>
+                        </div>
                     </div>
                 </div>
-                <div className="flex-1 space-y-3">
-                    <div className="space-y-2">
-                        <Label>Key</Label>
-                        <Input value={selectedKey || ""} onChange={(e) => setSelectedKey(e.target.value)} placeholder="例如 user:1" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-2">
-                            <Label>Type</Label>
-                            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={type} onChange={(e) => setType(e.target.value)}>
-                                {["string", "hash", "list", "set", "zset"].map((t) => (
-                                    <option key={t} value={t}>{t}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="space-y-2">
-                            <Label>TTL</Label>
-                            <Input value={ttl} onChange={(e) => setTtl(e.target.value)} placeholder="秒" />
+                <div className="rounded-xl border border-border/60 bg-card/60 overflow-hidden">
+                    <div className="flex items-center gap-3 border-b border-border/60 bg-background/70 px-4 py-3">
+                        <div className="text-sm font-semibold text-foreground">Key 详情</div>
+                        <div className="ml-auto flex items-center gap-2">
+                            <Button onClick={saveKey} disabled={loading}>保存</Button>
+                            <Button variant="destructive" onClick={deleteKey} disabled={loading || !selectedKey}>删除</Button>
                         </div>
                     </div>
-                    <div className="space-y-2">
-                        <Label>Value</Label>
-                        <textarea
-                            value={valueText}
-                            onChange={(e) => setValueText(e.target.value)}
-                            className="min-h-[200px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
-                        />
+                    <div className="p-4 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="space-y-2 md:col-span-2">
+                                <Label>Key</Label>
+                                <Input value={selectedKey || ""} onChange={(e) => setSelectedKey(e.target.value)} placeholder="例如 user:1" />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>TTL</Label>
+                                <Input value={ttl} onChange={(e) => setTtl(e.target.value)} placeholder="秒" />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div className="space-y-2">
+                                <Label>Type</Label>
+                                <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={type} onChange={(e) => setType(e.target.value)}>
+                                    {["string", "hash", "list", "set", "zset"].map((t) => (
+                                        <option key={t} value={t}>{t}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>加载方式</Label>
+                                <Input value="Live" readOnly />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Value</Label>
+                            <textarea
+                                value={valueText}
+                                onChange={(e) => setValueText(e.target.value)}
+                                className="min-h-[260px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                            />
+                        </div>
+                        {selectedValue && (
+                            <pre className="text-xs text-muted-foreground bg-muted/30 border border-border rounded-md p-3 overflow-auto">
+                                {JSON.stringify(selectedValue, null, 2)}
+                            </pre>
+                        )}
+                        {error && <div className="text-sm text-destructive">{error}</div>}
                     </div>
-                    <div className="flex gap-2">
-                        <Button onClick={saveKey} disabled={loading}>保存</Button>
-                        <Button variant="destructive" onClick={deleteKey} disabled={loading || !selectedKey}>删除</Button>
-                    </div>
-                    {selectedValue && (
-                        <pre className="text-xs text-muted-foreground bg-muted/30 border border-border rounded-md p-3 overflow-auto">
-                            {JSON.stringify(selectedValue, null, 2)}
-                        </pre>
-                    )}
-                    {error && <div className="text-sm text-destructive">{error}</div>}
                 </div>
             </div>
         </div>
@@ -403,6 +471,23 @@ function MongoPanel({ headers }: { headers: Record<string, string> }) {
         } finally {
             setLoading(false);
         }
+    };
+
+    const formatMongoId = (value: any) => {
+        if (value === null || value === undefined) return "-";
+        if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+            return String(value);
+        }
+        if (typeof value === "object") {
+            if ("$oid" in value) return String(value.$oid);
+            if ("oid" in value) return String(value.oid);
+            try {
+                return JSON.stringify(value);
+            } catch {
+                return String(value);
+            }
+        }
+        return String(value);
     };
 
     const insertDocument = async () => {
@@ -477,94 +562,143 @@ function MongoPanel({ headers }: { headers: Record<string, string> }) {
         if (db && collection) {
             loadDocuments();
         }
-    }, [collection]);
+    }, [db, collection]);
 
     return (
         <div className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="space-y-3">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 xl:grid-cols-[260px_1fr] gap-4">
+                <div className="rounded-xl border border-border/60 bg-card/60 overflow-hidden">
+                    <div className="border-b border-border/60 bg-background/70 px-4 py-3 text-sm font-semibold">MongoDB</div>
+                    <div className="p-3 space-y-4">
                         <div className="space-y-2">
-                            <Label>Database</Label>
-                            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={db} onChange={(e) => setDb(e.target.value)}>
-                                {databases.map((item) => (
-                                    <option key={item.name} value={item.name}>{item.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Collection</Label>
-                            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={collection} onChange={(e) => setCollection(e.target.value)}>
-                                {collections.map((item) => (
-                                    <option key={item.name} value={item.name}>{item.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <div className="space-y-2">
-                            <Label>Filter</Label>
-                            <Input value={filterJson} onChange={(e) => setFilterJson(e.target.value)} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Limit</Label>
-                            <Input value={limit} onChange={(e) => setLimit(e.target.value)} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Skip</Label>
-                            <Input value={skip} onChange={(e) => setSkip(e.target.value)} />
-                        </div>
-                    </div>
-                    <Button onClick={loadDocuments} disabled={loading}>刷新</Button>
-                    <div className="rounded-md border border-border overflow-hidden">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead className="w-[220px]">_id</TableHead>
-                                    <TableHead>Document</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {documents.length === 0 ? (
-                                    <TableRow>
-                                        <TableCell colSpan={2} className="text-center text-muted-foreground">
-                                            {loading ? "加载中..." : "暂无数据"}
-                                        </TableCell>
-                                    </TableRow>
+                            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-[0.2em]">Databases</div>
+                            <div className="space-y-1">
+                                {databases.length === 0 ? (
+                                    <div className="px-2 py-2 text-xs text-muted-foreground">暂无数据库</div>
                                 ) : (
-                                    documents.map((doc, index) => (
-                                        <TableRow key={doc._id ? String(doc._id) : index}>
-                                            <TableCell className="truncate">{doc._id ? String(doc._id) : "-"}</TableCell>
-                                            <TableCell>
-                                                <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{JSON.stringify(doc, null, 2)}</pre>
-                                            </TableCell>
-                                        </TableRow>
+                                    databases.map((item) => (
+                                        <button
+                                            key={item.name}
+                                            type="button"
+                                            onClick={() => setDb(item.name)}
+                                            className={`w-full rounded-md px-2 py-2 text-left text-sm hover:bg-muted/40 ${db === item.name ? "bg-muted/40 text-foreground" : "text-foreground/80"}`}
+                                        >
+                                            {item.name}
+                                        </button>
                                     ))
                                 )}
-                            </TableBody>
-                        </Table>
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-[0.2em]">Collections</div>
+                            <div className="space-y-1">
+                                {collections.length === 0 ? (
+                                    <div className="px-2 py-2 text-xs text-muted-foreground">暂无集合</div>
+                                ) : (
+                                    collections.map((item) => (
+                                        <button
+                                            key={item.name}
+                                            type="button"
+                                            onClick={() => setCollection(item.name)}
+                                            className={`w-full rounded-md px-2 py-2 text-left text-sm hover:bg-muted/40 ${collection === item.name ? "bg-muted/40 text-foreground" : "text-foreground/80"}`}
+                                        >
+                                            {item.name}
+                                        </button>
+                                    ))
+                                )}
+                            </div>
+                        </div>
                     </div>
-                    <div className="text-xs text-muted-foreground">Total: {total}</div>
                 </div>
-                <div className="space-y-4">
-                    <div className="space-y-2">
-                        <Label>插入文档</Label>
-                        <textarea value={insertJson} onChange={(e) => setInsertJson(e.target.value)} className="min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono" />
-                        <Button onClick={insertDocument} disabled={loading}>插入</Button>
+                <div className="rounded-xl border border-border/60 bg-card/60 overflow-hidden">
+                    <div className="flex items-center gap-3 border-b border-border/60 bg-background/70 px-4 py-3">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                            <span>Documents</span>
+                        </div>
+                        <div className="ml-auto flex items-center gap-3">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <span>{db || "未选择数据库"}</span>
+                                <span>/</span>
+                                <span>{collection || "未选择集合"}</span>
+                            </div>
+                            <Button variant="outline" onClick={loadDocuments} disabled={loading}>刷新</Button>
+                        </div>
                     </div>
-                    <div className="space-y-2">
-                        <Label>更新文档 Filter</Label>
-                        <textarea value={updateFilterJson} onChange={(e) => setUpdateFilterJson(e.target.value)} className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono" />
-                        <Label>更新文档 Update</Label>
-                        <textarea value={updateJson} onChange={(e) => setUpdateJson(e.target.value)} className="min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono" />
-                        <Button onClick={updateDocument} disabled={loading}>更新</Button>
+                    <div className="p-4 space-y-4">
+                        <div className="grid grid-cols-1 lg:grid-cols-[1fr_120px_120px_auto] gap-3 items-end">
+                            <div className="space-y-2">
+                                <Label>Filter</Label>
+                                <Input value={filterJson} onChange={(e) => setFilterJson(e.target.value)} placeholder='{"status":"active"}' />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Limit</Label>
+                                <Input value={limit} onChange={(e) => setLimit(e.target.value)} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Skip</Label>
+                                <Input value={skip} onChange={(e) => setSkip(e.target.value)} />
+                            </div>
+                            <div className="flex items-end">
+                                <Button onClick={loadDocuments} disabled={loading}>Find</Button>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-4">
+                            <div className="space-y-3">
+                                <div className="rounded-md border border-border overflow-hidden">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead className="w-[220px]">_id</TableHead>
+                                                <TableHead>Document</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {documents.length === 0 ? (
+                                                <TableRow>
+                                                    <TableCell colSpan={2} className="text-center text-muted-foreground">
+                                                        {loading ? "加载中..." : "暂无数据"}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ) : (
+                                                documents.map((doc, index) => {
+                                                    const docId = formatMongoId(doc?._id);
+                                                    return (
+                                                        <TableRow key={docId !== "-" ? docId : `${index}`}>
+                                                            <TableCell className="truncate">{docId}</TableCell>
+                                                            <TableCell>
+                                                                <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{JSON.stringify(doc, null, 2)}</pre>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    );
+                                                })
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                                <div className="text-xs text-muted-foreground">Total: {total}</div>
+                            </div>
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label>插入文档</Label>
+                                    <textarea value={insertJson} onChange={(e) => setInsertJson(e.target.value)} className="min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono" />
+                                    <Button onClick={insertDocument} disabled={loading}>插入</Button>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>更新文档 Filter</Label>
+                                    <textarea value={updateFilterJson} onChange={(e) => setUpdateFilterJson(e.target.value)} className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono" />
+                                    <Label>更新文档 Update</Label>
+                                    <textarea value={updateJson} onChange={(e) => setUpdateJson(e.target.value)} className="min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono" />
+                                    <Button onClick={updateDocument} disabled={loading}>更新</Button>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>删除文档 Filter</Label>
+                                    <textarea value={deleteFilterJson} onChange={(e) => setDeleteFilterJson(e.target.value)} className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono" />
+                                    <Button variant="destructive" onClick={deleteDocument} disabled={loading}>删除</Button>
+                                </div>
+                                {error && <div className="text-sm text-destructive">{error}</div>}
+                            </div>
+                        </div>
                     </div>
-                    <div className="space-y-2">
-                        <Label>删除文档 Filter</Label>
-                        <textarea value={deleteFilterJson} onChange={(e) => setDeleteFilterJson(e.target.value)} className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono" />
-                        <Button variant="destructive" onClick={deleteDocument} disabled={loading}>删除</Button>
-                    </div>
-                    {error && <div className="text-sm text-destructive">{error}</div>}
                 </div>
             </div>
         </div>
@@ -681,86 +815,129 @@ function MysqlPanel({ headers }: { headers: Record<string, string> }) {
 
     return (
         <div className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="space-y-3">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 xl:grid-cols-[260px_1fr] gap-4">
+                <div className="rounded-xl border border-border/60 bg-card/60 overflow-hidden">
+                    <div className="border-b border-border/60 bg-background/70 px-4 py-3 text-sm font-semibold">MySQL</div>
+                    <div className="p-3 space-y-4">
                         <div className="space-y-2">
-                            <Label>Database</Label>
-                            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={database} onChange={(e) => setDatabase(e.target.value)}>
-                                {databases.map((db) => (
-                                    <option key={db} value={db}>{db}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Table</Label>
-                            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={table} onChange={(e) => setTable(e.target.value)}>
-                                {tables.map((tb) => (
-                                    <option key={tb} value={tb}>{tb}</option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <div className="space-y-2">
-                            <Label>Limit</Label>
-                            <Input value={limit} onChange={(e) => setLimit(e.target.value)} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Offset</Label>
-                            <Input value={offset} onChange={(e) => setOffset(e.target.value)} />
-                        </div>
-                        <div className="flex items-end">
-                            <Button onClick={loadRows} disabled={loading}>刷新</Button>
-                        </div>
-                    </div>
-                    <div className="rounded-md border border-border overflow-hidden">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    {columns.map((col) => (
-                                        <TableHead key={col}>{col}</TableHead>
-                                    ))}
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {rows.length === 0 ? (
-                                    <TableRow>
-                                        <TableCell colSpan={Math.max(columns.length, 1)} className="text-center text-muted-foreground">
-                                            {loading ? "加载中..." : "暂无数据"}
-                                        </TableCell>
-                                    </TableRow>
+                            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-[0.2em]">Databases</div>
+                            <div className="space-y-1">
+                                {databases.length === 0 ? (
+                                    <div className="px-2 py-2 text-xs text-muted-foreground">暂无数据库</div>
                                 ) : (
-                                    rows.map((row, index) => (
-                                        <TableRow key={index}>
-                                            {columns.map((col) => (
-                                                <TableCell key={col}>{String(row[col])}</TableCell>
-                                            ))}
-                                        </TableRow>
+                                    databases.map((dbName) => (
+                                        <button
+                                            key={dbName}
+                                            type="button"
+                                            onClick={() => setDatabase(dbName)}
+                                            className={`w-full rounded-md px-2 py-2 text-left text-sm hover:bg-muted/40 ${database === dbName ? "bg-muted/40 text-foreground" : "text-foreground/80"}`}
+                                        >
+                                            {dbName}
+                                        </button>
                                     ))
                                 )}
-                            </TableBody>
-                        </Table>
-                    </div>
-                    <div className="text-xs text-muted-foreground">Total: {total}</div>
-                </div>
-                <div className="space-y-3">
-                    <div className="space-y-2">
-                        <Label>SQL 编辑器</Label>
-                        <textarea value={sql} onChange={(e) => setSql(e.target.value)} className="min-h-[200px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono" />
-                        <div className="flex gap-2">
-                            <Button onClick={() => runSql(false)} disabled={loading}>执行</Button>
-                            {confirmRequired && (
-                                <Button variant="destructive" onClick={() => runSql(true)} disabled={loading}>确认执行</Button>
-                            )}
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-[0.2em]">Tables</div>
+                            <div className="space-y-1">
+                                {tables.length === 0 ? (
+                                    <div className="px-2 py-2 text-xs text-muted-foreground">暂无表</div>
+                                ) : (
+                                    tables.map((tb) => (
+                                        <button
+                                            key={tb}
+                                            type="button"
+                                            onClick={() => setTable(tb)}
+                                            className={`w-full rounded-md px-2 py-2 text-left text-sm hover:bg-muted/40 ${table === tb ? "bg-muted/40 text-foreground" : "text-foreground/80"}`}
+                                        >
+                                            {tb}
+                                        </button>
+                                    ))
+                                )}
+                            </div>
                         </div>
                     </div>
-                    {queryResult && (
-                        <pre className="text-xs text-muted-foreground bg-muted/30 border border-border rounded-md p-3 overflow-auto">
-                            {JSON.stringify(queryResult, null, 2)}
-                        </pre>
-                    )}
-                    {error && <div className="text-sm text-destructive">{error}</div>}
+                </div>
+                <div className="rounded-xl border border-border/60 bg-card/60 overflow-hidden">
+                    <div className="flex items-center gap-3 border-b border-border/60 bg-background/70 px-4 py-3">
+                        <div className="text-sm font-semibold text-foreground">SQL Console</div>
+                        <div className="ml-auto text-xs text-muted-foreground">
+                            {database || "未选择数据库"}
+                            {table ? ` / ${table}` : ""}
+                        </div>
+                    </div>
+                    <div className="border-b border-border/60 bg-background/60 px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Button variant="outline" disabled>Query</Button>
+                            <Button variant="ghost" disabled>History</Button>
+                            <Button variant="ghost" disabled>Explain</Button>
+                            <div className="ml-auto flex items-center gap-2">
+                                <div className="flex items-center gap-2">
+                                    <Label>Limit</Label>
+                                    <Input value={limit} onChange={(e) => setLimit(e.target.value)} className="h-9 w-24" />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Label>Offset</Label>
+                                    <Input value={offset} onChange={(e) => setOffset(e.target.value)} className="h-9 w-24" />
+                                </div>
+                                <Button onClick={loadRows} disabled={loading}>刷新</Button>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="p-4 space-y-4">
+                        <div className="space-y-2">
+                            <Label>SQL 编辑器</Label>
+                            <textarea value={sql} onChange={(e) => setSql(e.target.value)} className="min-h-[200px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono" />
+                            <div className="flex gap-2">
+                                <Button onClick={() => runSql(false)} disabled={loading}>执行</Button>
+                                {confirmRequired && (
+                                    <Button variant="destructive" onClick={() => runSql(true)} disabled={loading}>确认执行</Button>
+                                )}
+                            </div>
+                        </div>
+                        <div className="space-y-3">
+                            <div className="rounded-md border border-border overflow-hidden">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            {columns.length === 0 ? (
+                                                <TableHead>Result</TableHead>
+                                            ) : (
+                                                columns.map((col) => (
+                                                    <TableHead key={col}>{col}</TableHead>
+                                                ))
+                                            )}
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {rows.length === 0 ? (
+                                            <TableRow>
+                                                <TableCell colSpan={Math.max(columns.length, 1)} className="text-center text-muted-foreground">
+                                                    {loading ? "加载中..." : "暂无数据"}
+                                                </TableCell>
+                                            </TableRow>
+                                        ) : (
+                                            rows.map((row, index) => (
+                                                <TableRow key={index}>
+                                                    {columns.map((col) => (
+                                                        <TableCell key={col}>{String(row[col])}</TableCell>
+                                                    ))}
+                                                </TableRow>
+                                            ))
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                            <div className="text-xs text-muted-foreground">Total: {total}</div>
+                        </div>
+                        {queryResult && (
+                            <pre className="text-xs text-muted-foreground bg-muted/30 border border-border rounded-md p-3 overflow-auto">
+                                {JSON.stringify(queryResult, null, 2)}
+                            </pre>
+                        )}
+                        {error && <div className="text-sm text-destructive">{error}</div>}
+                    </div>
                 </div>
             </div>
         </div>

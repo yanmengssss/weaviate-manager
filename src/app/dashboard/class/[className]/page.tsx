@@ -28,6 +28,23 @@ type DataObject = {
     [key: string]: any;
 };
 
+type StoredConfig = {
+    type: "redis" | "mongodb" | "mysql" | "weaviate";
+    url?: string;
+    host?: string;
+    port?: string;
+    protocol?: "http" | "https";
+    username?: string;
+    apiKey?: string;
+    useTls?: boolean;
+};
+
+type SessionItem = {
+    id: string;
+    name: string;
+    config: StoredConfig;
+};
+
 // Reusable cell with tooltip + click-to-copy
 function CopyableCell({ value, maxWidth = 200 }: { value: string; maxWidth?: number }) {
     const [copied, setCopied] = useState(false);
@@ -101,12 +118,33 @@ export default function ClassDataPage({ params }: { params: Promise<{ className:
     const [propertiesJson, setPropertiesJson] = useState("");
 
     const getConfig = () => {
+        const storedSessions = localStorage.getItem("weaviateSessions");
+        const storedActiveId = localStorage.getItem("weaviateActiveSessionId");
         const stored = localStorage.getItem("weaviateConfig");
+        if (storedSessions) {
+            try {
+                const sessions = JSON.parse(storedSessions) as SessionItem[];
+                const active = sessions.find((item) => item.id === storedActiveId) || sessions[0];
+                if (!active || active.config.type !== "weaviate") {
+                    router.push("/");
+                    return null;
+                }
+                return active.config;
+            } catch {
+                router.push("/");
+                return null;
+            }
+        }
         if (!stored) {
             router.push("/");
             return null;
         }
-        return JSON.parse(stored);
+        const legacy = JSON.parse(stored) as StoredConfig;
+        if (legacy.type !== "weaviate") {
+            router.push("/");
+            return null;
+        }
+        return legacy;
     };
 
     const getAuthHeaders = () => {
@@ -121,6 +159,11 @@ export default function ClassDataPage({ params }: { params: Promise<{ className:
     const fetchData = useCallback(async (isInitial = false) => {
         if (!isInitial) setIsLoading(true);
         try {
+            const config = getConfig();
+            if (!config) {
+                setIsLoading(false);
+                return;
+            }
             const offset = (currentPage - 1) * pageSize;
             const queryParams = new URLSearchParams({
                 class: className,

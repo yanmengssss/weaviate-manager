@@ -106,7 +106,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         return sessions.find((item) => item.id === activeSessionId) || sessions[0];
     }, [sessions, activeSessionId]);
     const dataSourceLabel = useMemo(() => {
-           // @ts-ignore
+        // @ts-ignore
         const type = config?.type || "weaviate";
         if (type === "redis") return "Redis";
         if (type === "mongodb") return "MongoDB";
@@ -184,23 +184,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         const fallbackHost = target.host ? (target.port ? `${target.host}:${target.port}` : target.host) : "";
         const redisHost = target.redisUrl
             ? (() => {
-                  try {
-                      const u = new URL(target.redisUrl);
-                      return u.host;
-                  } catch {
-                      return target.redisUrl;
-                  }
-              })()
+                try {
+                    const u = new URL(target.redisUrl);
+                    return u.host;
+                } catch {
+                    return target.redisUrl;
+                }
+            })()
             : "";
         const mongoHost = target.mongoUri
             ? (() => {
-                  try {
-                      const u = new URL(target.mongoUri);
-                      return u.host;
-                  } catch {
-                      return target.mongoUri;
-                  }
-              })()
+                try {
+                    const u = new URL(target.mongoUri);
+                    return u.host;
+                } catch {
+                    return target.mongoUri;
+                }
+            })()
             : "";
         const host = fallbackHost || redisHost || mongoHost || "instance";
         if (type === "redis") return `Redis:${host}`;
@@ -750,7 +750,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             <DialogTitle>新增连接</DialogTitle>
                             <DialogDescription>填写数据源连接信息，创建新的会话标签</DialogDescription>
                         </DialogHeader>
-                        <form onSubmit={handleConnectSubmit} className="space-y-6">
+                        <form onSubmit={handleConnectSubmit} className="space-y-6 overflow-y-auto max-h-[75vh] ">
                             <div className="space-y-2">
                                 <Label className="text-sm font-semibold">数据源类型</Label>
                                 <div className="grid grid-cols-2 gap-2">
@@ -1117,11 +1117,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
                             {status && (
                                 <div
-                                    className={`p-3 text-sm rounded-lg border text-center ${
-                                        status.type === "success"
-                                            ? "text-emerald-600 bg-emerald-500/10 border-emerald-500/20"
-                                            : "text-destructive bg-destructive/10 border-destructive/20"
-                                    }`}
+                                    className={`p-3 text-sm rounded-lg border text-center ${status.type === "success"
+                                        ? "text-emerald-600 bg-emerald-500/10 border-emerald-500/20"
+                                        : "text-destructive bg-destructive/10 border-destructive/20"
+                                        }`}
                                 >
                                     {status.message}
                                 </div>
@@ -1188,11 +1187,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                 return (
                                     <button
                                         key={tab.id}
-                                        className={`group flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-all ${
-                                            isActive
-                                                ? "border-primary/40 bg-primary/10 text-foreground shadow-[0_0_0_1px_rgba(56,189,248,0.25)]"
-                                                : "border-transparent bg-card/60 text-muted-foreground hover:text-foreground hover:border-border/60"
-                                        }`}
+                                        className={`group flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-all ${isActive
+                                            ? "border-primary/40 bg-primary/10 text-foreground shadow-[0_0_0_1px_rgba(56,189,248,0.25)]"
+                                            : "border-transparent bg-card/60 text-muted-foreground hover:text-foreground hover:border-border/60"
+                                            }`}
                                         onClick={() => {
                                             setActiveSessionId(tab.id);
                                             localStorage.setItem("weaviateActiveSessionId", tab.id);
@@ -1236,11 +1234,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                                         <Link
                                                             key={cls.class}
                                                             href={`/dashboard/class/${cls.class}`}
-                                                            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors border ${
-                                                                isActive
-                                                                    ? "border-primary/40 bg-primary/10 text-foreground"
-                                                                    : "border-transparent text-foreground/80 hover:bg-card/80 hover:text-foreground hover:border-border/60"
-                                                            }`}
+                                                            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors border ${isActive
+                                                                ? "border-primary/40 bg-primary/10 text-foreground"
+                                                                : "border-transparent text-foreground/80 hover:bg-card/80 hover:text-foreground hover:border-border/60"
+                                                                }`}
                                                         >
                                                             <FileText className="w-4 h-4 text-primary" />
                                                             <span className="truncate">{cls.class}</span>
@@ -1323,7 +1320,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         <DialogTitle>新增连接</DialogTitle>
                         <DialogDescription>填写数据源连接信息，创建新的会话标签</DialogDescription>
                     </DialogHeader>
-                    <form onSubmit={handleConnectSubmit} className="space-y-6">
+                    <form onSubmit={handleConnectSubmit} className="space-y-6 overflow-y-auto max-h-[75vh]">
                         <div className="space-y-2">
                             <Label className="text-sm font-semibold">数据源类型</Label>
                             <div className="grid grid-cols-2 gap-2">
@@ -1687,11 +1684,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
                         {status && (
                             <div
-                                className={`p-3 text-sm rounded-lg border text-center ${
-                                    status.type === "success"
-                                        ? "text-emerald-600 bg-emerald-500/10 border-emerald-500/20"
-                                        : "text-destructive bg-destructive/10 border-destructive/20"
-                                }`}
+                                className={`p-3 text-sm rounded-lg border text-center ${status.type === "success"
+                                    ? "text-emerald-600 bg-emerald-500/10 border-emerald-500/20"
+                                    : "text-destructive bg-destructive/10 border-destructive/20"
+                                    }`}
                             >
                                 {status.message}
                             </div>
